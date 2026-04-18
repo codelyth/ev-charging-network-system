@@ -64,6 +64,8 @@ Detailed operational flows have been modeled for the following processes to ensu
 
 [x] Database Schema (ERD) Design
 
+[x] Mobile App. Interface Design
+
 [ ] Backend API Development
 
 [ ] IoT Sensor Data Simulation
