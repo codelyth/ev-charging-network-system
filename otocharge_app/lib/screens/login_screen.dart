@@ -33,18 +33,9 @@ class LoginScreen extends StatelessWidget {
                         );
                       }
                     },
-                  ),
-                  const Row(
-                    children: [
-                      Icon(Icons.star_outline, color: Colors.white24, size: 20),
-                      SizedBox(width: 15),
-                      Icon(Icons.thumb_up_outlined, color: Colors.white24, size: 20),
-                      SizedBox(width: 15),
-                      Icon(Icons.thumb_down_outlined, color: Colors.white24, size: 20),
-                    ],
-                  )
+                  ), 
                 ],
-              ),
+              ), 
               
               const SizedBox(height: 40),
               
