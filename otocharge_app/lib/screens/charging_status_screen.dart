@@ -24,9 +24,11 @@ class _ChargingStatusScreenState extends State<ChargingStatusScreen> {
     return StreamBuilder<QuerySnapshot>(
       // Firestore'da 'ActiveSessions' koleksiyonunda aktif bir kayıt var mı bakıyoruz
       stream: FirebaseFirestore.instance
-          .collection('ActiveSessions')
-          .limit(1) // Sadece en güncel aktif oturumu al
-          .snapshots(),
+        .collection('Sessions')
+        .where('userId', isEqualTo: 'user_123')
+        .where('status', isEqualTo: 'active') // Sadece aktif olanı getir
+        .limit(1)
+        .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -266,13 +268,29 @@ class _ChargingStatusScreenState extends State<ChargingStatusScreen> {
   }
 
   Widget _buildStopButton(BuildContext context) {
-    return SizedBox(
-      width: double.infinity, height: 58,
-      child: ElevatedButton(
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PaymentScreen())),
-        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF4D06F), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
-        child: const Text('STOP CHARGING', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, letterSpacing: 1)),
+  return SizedBox(
+    width: double.infinity, height: 58,
+    child: ElevatedButton(
+      onPressed: () async {
+        // Dökümanı silmek yerine statüsünü 'completed' yapıyoruz
+        await FirebaseFirestore.instance
+            .collection('Sessions')
+            .doc('current_session')
+            .update({
+          'status': 'completed',
+          'endTime': FieldValue.serverTimestamp(),
+        });
+
+        if (context.mounted) {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const PaymentScreen()));
+        }
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFFF4D06F), 
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))
       ),
-    );
-  }
+      child: const Text('STOP CHARGING', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900)),
+    ),
+  );
+}
 }

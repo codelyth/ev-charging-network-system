@@ -1,11 +1,11 @@
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // Firebase eklendi
 import 'charging_status_screen.dart';
 
 class StationDetailScreen extends StatelessWidget {
-  // HARİTADAN GELEN VERİLERİ BURADA KARŞILIYORUZ
   final String stationId;
-  final Map<String, dynamic> stationData;
+  final Map<String, dynamic> stationData; // İlk açılışta hızlı yükleme için yedek veri
 
   const StationDetailScreen({
     super.key,
@@ -15,59 +15,70 @@ class StationDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Firebase'den gelen verileri modele döküyoruz
-    final station = _StationDetailModel(
-      name: stationData['name'] ?? 'Unknown Station',
-      distance: '0.8 miles away', // Şimdilik statik kalabilir veya hesaplanabilir
-      rating: '4.9',
-      reviewCount: 124,
-      status: (stationData['isAvailable'] ?? true) ? 'AVAILABLE' : 'BUSY',
-      power: '${stationData['power_kW'] ?? 0} kW',
-      price: '\$${stationData['price_per_kWh'] ?? 0} / kWh',
-      estimatedFullCharge: '\$12.50 approx.',
-      address: 'Grand Central Parking, Level 2',
-      accessInfo: 'Access 24/7 • Security on site',
-      sockets: const [
-        _SocketModel(type: 'CCS2', description: 'Fast'),
-        _SocketModel(type: 'Type 2', description: 'AC'),
-      ],
-    );
+    // StreamBuilder ile anlık veriyi dinliyoruz
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('Stations').doc(stationId).snapshots(),
+      builder: (context, snapshot) {
+        // Veri yüklenene kadar yedek veriyi (stationData) kullanıyoruz ki ekran boş kalmasın
+        final Map<String, dynamic> currentData = snapshot.hasData && snapshot.data!.exists
+            ? snapshot.data!.data() as Map<String, dynamic>
+            : stationData;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF101010),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHero(context, station),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildStationHeader(station),
-                    const SizedBox(height: 14),
-                    _buildCompactInfo(station),
-                    const SizedBox(height: 14),
-                    _buildSocketRow(station.sockets),
-                    const SizedBox(height: 14),
-                    _buildLocationCard(station),
-                    const SizedBox(height: 18),
-                    _startChargingButton(context),
-                  ],
-                ),
+        // Modeli Firebase'den gelen verilerle dolduruyoruz
+        final station = _StationDetailModel(
+          name: currentData['name'] ?? 'Unknown Station',
+          distance: '0.8 miles away', 
+          rating: '4.9',
+          reviewCount: 124,
+          status: (currentData['isAvailable'] ?? true) ? 'AVAILABLE' : 'BUSY',
+          power: '${currentData['speed'] ?? currentData['power_kW'] ?? 0} kW', // Değişken adını her iki ihtimale karşı kontrol ediyoruz
+          price: '\$${currentData['price'] ?? currentData['price_per_kWh'] ?? 0} / kWh',
+          estimatedFullCharge: '\$12.50 approx.',
+          address: currentData['address'] ?? 'Address not specified',
+          accessInfo: 'Access 24/7 • Security on site',
+          sockets: const [
+            _SocketModel(type: 'CCS2', description: 'Fast'),
+            _SocketModel(type: 'Type 2', description: 'AC'),
+          ],
+        );
+
+        return Scaffold(
+          backgroundColor: const Color(0xFF101010),
+          body: SafeArea(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHero(context, station),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildStationHeader(station),
+                        const SizedBox(height: 14),
+                        _buildCompactInfo(station),
+                        const SizedBox(height: 14),
+                        _buildSocketRow(station.sockets),
+                        const SizedBox(height: 14),
+                        _buildLocationCard(station),
+                        const SizedBox(height: 18),
+                        _startChargingButton(context, station.status == 'AVAILABLE', currentData['name'] ?? 'Station'),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  // --- WIDGET METOTLARI AYNI KALIYOR (Değişiklik yok) ---
+  // --- TASARIM WIDGETLARI (Milimetrik Korundu) ---
 
   Widget _buildHero(BuildContext context, _StationDetailModel station) {
     return Container(
@@ -387,44 +398,53 @@ class StationDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _startChargingButton(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: ElevatedButton.icon(
-        onPressed: () {
-          // Şarj ekranına istasyon verilerini gönderiyoruz
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ChargingStatusScreen(
-                stationId: stationId,
-                stationName: stationData['name'] ?? 'Station',
-              ),
-            ),
-          );
-        },
-        icon: const Icon(Icons.bolt_rounded, color: Colors.black),
-        label: const Text(
-          'START CHARGING',
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1,
-          ),
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFF4D06F),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-        ),
+  Widget _startChargingButton(BuildContext context, bool isAvailable, String sName) {
+  return SizedBox(
+    width: double.infinity,
+    height: 56,
+    child: ElevatedButton.icon(
+      onPressed: isAvailable 
+        ? () async {
+            // Sessions koleksiyonuna "active" statüsünde yeni bir döküman ekliyoruz
+            await FirebaseFirestore.instance.collection('Sessions').doc('current_session').set({
+              'userId': 'user_123',
+              'stationId': stationId,
+              'stationName': sName,
+              'status': 'active', // Bu alan kritik!
+              'soc': 15,
+              'power': stationData['speed'] ?? 150,
+              'startTime': FieldValue.serverTimestamp(),
+            });
+
+            if (context.mounted) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ChargingStatusScreen(
+                    stationId: stationId,
+                    stationName: sName,
+                  ),
+                ),
+              );
+            }
+          }
+        : null,
+      icon: const Icon(Icons.bolt_rounded, color: Colors.black),
+      label: Text(
+        isAvailable ? 'START CHARGING' : 'STATION BUSY',
+        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900),
       ),
-    );
-  }
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFFF4D06F),
+        disabledBackgroundColor: Colors.white10,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+    ),
+  );
+}
 
   Widget _statusBadge(String text) {
+    final isAvailable = text == 'AVAILABLE';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
       decoration: BoxDecoration(
@@ -433,8 +453,8 @@ class StationDetailScreen extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: const TextStyle(
-          color: Color(0xFF2F8F5B),
+        style: TextStyle(
+          color: isAvailable ? const Color(0xFF2F8F5B) : Colors.redAccent,
           fontSize: 10.5,
           fontWeight: FontWeight.w900,
           letterSpacing: 0.8,
@@ -464,7 +484,7 @@ class StationDetailScreen extends StatelessWidget {
   }
 }
 
-// --- MODEL SINIFLARI AYNI KALIYOR ---
+// --- MODEL SINIFLARI ---
 class _StationDetailModel {
   final String name;
   final String distance;
