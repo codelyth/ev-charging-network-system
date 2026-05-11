@@ -3,433 +3,269 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'station_detail_screen.dart';
 
-class ExploreScreen extends StatelessWidget {
+class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
 
   @override
+  State<ExploreScreen> createState() => _ExploreScreenState();
+}
+
+class _ExploreScreenState extends State<ExploreScreen> {
+  String searchQuery = "";
+  final PageController _pageController = PageController(viewportFraction: 0.9);
+
+  @override
   Widget build(BuildContext context) {
+    // Klavye açık mı kontrolü (Sarı çizgileri engellemek için)
+    final bool isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom != 0;
+
     return Scaffold(
-      backgroundColor: const Color(0xFF101010),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      resizeToAvoidBottomInset: false, // Klavye açıldığında ekranın büzülmesini engeller
+      backgroundColor: const Color(0xFF000000),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('Stations').snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator(color: Color(0xFFF4D06F)));
+          }
+
+          final allDocs = snapshot.data!.docs;
+          
+          // Arama Filtresi: İsme göre filtreleme yapıyoruz
+          final filteredDocs = allDocs.where((d) {
+            final name = d['name']?.toString().toLowerCase() ?? "";
+            return name.contains(searchQuery);
+          }).toList();
+
+          return Stack(
             children: [
-              _buildHeader(), // context parametresi ve ikon kaldırıldı
-              const SizedBox(height: 24),
-              _buildSearchBar(),
-              const SizedBox(height: 18),
-              Expanded(child: _buildMapArea()),
-              const SizedBox(height: 18),
-              _buildLiveStationCard(), // Firestore'dan veri çeken yapımız
+              // 1. ARKA PLAN: Sabit Izgara ve Yol Çizimi
+              const Positioned.fill(
+                child: _MapPatternPainter(key: ValueKey('static_map')),
+              ),
+
+              // 2. DİNAMİK MARKERLAR (Harita üzerinde sabit dururlar)
+              ...filteredDocs.map((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                // Koordinatları ekrana oranlıyoruz
+                double lat = (data['latitude'] is num) ? data['latitude'].toDouble() : 0.5;
+                double lng = (data['longitude'] is num) ? data['longitude'].toDouble() : 0.5;
+
+                // Değerler 0-1 arası değilse normalize et
+                if (lat > 1) lat = (lat % 100) / 100;
+                if (lng > 1) lng = (lng % 100) / 100;
+
+                return Positioned(
+                  key: ValueKey('marker_${doc.id}'),
+                  top: MediaQuery.of(context).size.height * lat,
+                  left: MediaQuery.of(context).size.width * lng,
+                  child: _buildMapMarker(),
+                );
+              }),
+
+              // 3. SABİT ÜST PANEL (Logo ve Arama)
+              SafeArea(
+                child: Column(
+                  children: [
+                    _buildTopBar(),
+                    _buildSearchAndFilter(),
+                  ],
+                ),
+              ),
+
+              // 4. ALT PANEL (İstasyon Kartları)
+              // Klavye açıkken gizlenir, böylece sarı-siyah overflow hatası oluşmaz.
+              if (!isKeyboardOpen && filteredDocs.isNotEmpty)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Container(
+                    height: 360,
+                    padding: const EdgeInsets.only(bottom: 25),
+                    child: PageView.builder(
+                      controller: _pageController,
+                      itemCount: filteredDocs.length,
+                      itemBuilder: (context, index) {
+                        final data = filteredDocs[index].data() as Map<String, dynamic>;
+                        final id = filteredDocs[index].id;
+                        return _buildStationCardUI(id, data);
+                      },
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // --- TASARIM ELEMENTLERİ ---
+
+  Widget _buildMapMarker() {
+    return Container(
+      width: 45, height: 45,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C1C1E),
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFFF4D06F), width: 3),
+        boxShadow: [
+          BoxShadow(color: const Color(0xFFF4D06F).withOpacity(0.4), blurRadius: 15, spreadRadius: 2)
+        ],
+      ),
+      child: const Icon(Icons.ev_station, color: Colors.white, size: 20),
+    );
+  }
+
+  Widget _buildTopBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.star, color: Color(0xFFF4D06F), size: 28),
+              SizedBox(width: 8),
+              Text("SPARKY", style: TextStyle(color: Color(0xFFF4D06F), fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
             ],
           ),
-        ),
+          const CircleAvatar(radius: 22, backgroundColor: Color(0xFF1C1C1E), child: Icon(Icons.person, color: Colors.white70)),
+        ],
       ),
     );
   }
 
-  // --- SADECE LOGO KALDI ---
-  Widget _buildHeader() {
-    return const Row(
-      children: [
-        Icon(Icons.star_rounded, color: Color(0xFFF4D06F), size: 24),
-        SizedBox(width: 8),
-        Text(
-          'SPARKY',
-          style: TextStyle(
-            color: Color(0xFFF4D06F),
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.2,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return Container(
-      height: 56,
-      decoration: BoxDecoration(
-        color: const Color(0xFF1B1B1B),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
-      ),
+  Widget _buildSearchAndFilter() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Row(
         children: [
-          const SizedBox(width: 16),
-          const Icon(Icons.search_rounded, color: Colors.white38, size: 24),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text(
-              'Find a station',
-              style: TextStyle(
-                color: Colors.white38,
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Container(
-            width: 42,
-            height: 42,
-            margin: const EdgeInsets.only(right: 7),
-            decoration: BoxDecoration(
-              color: const Color(0xFF252525),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.tune_rounded,
-              color: Color(0xFFF4D06F),
-              size: 22,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMapArea() {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: const Color(0xFF151515),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Stack(
-        children: [
-          Positioned.fill(child: CustomPaint(painter: _FakeMapPainter())),
-          Center(
+          Expanded(
             child: Container(
-              width: 58,
-              height: 58,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFF4D06F).withOpacity(0.18),
-                border: Border.all(color: const Color(0xFFF4D06F), width: 2),
-              ),
-              child: const Icon(
-                Icons.ev_station_rounded,
-                color: Color(0xFFF4D06F),
-                size: 28,
+              height: 56,
+              decoration: BoxDecoration(color: const Color(0xFF1C1C1E).withOpacity(0.9), borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.white10)),
+              child: TextField(
+                onChanged: (value) => setState(() => searchQuery = value.toLowerCase()),
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: "Find a station",
+                  hintStyle: TextStyle(color: Colors.white30),
+                  prefixIcon: Icon(Icons.search, color: Colors.white54),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(vertical: 15),
+                ),
               ),
             ),
           ),
-          Positioned(
-            top: 18,
-            left: 18,
-            child: _buildMapChip('1 station nearby'),
-          ),
-          Positioned(
-            bottom: 18,
-            right: 18,
-            child: _buildLocationButton(),
+          const SizedBox(width: 12),
+          Container(
+            height: 56, width: 56,
+            decoration: BoxDecoration(color: const Color(0xFF1C1C1E).withOpacity(0.9), borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.white10)),
+            child: const Icon(Icons.tune_rounded, color: Color(0xFFF4D06F)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMapChip(String text) {
+  Widget _buildStationCardUI(String id, Map<String, dynamic> data) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.45),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: Colors.white70,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLocationButton() {
-    return Container(
-      width: 46,
-      height: 46,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF4D06F),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: const Icon(
-        Icons.my_location_rounded,
-        color: Colors.black,
-        size: 22,
-      ),
-    );
-  }
-
-  Widget _buildLiveStationCard() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('Stations').snapshots(),
-      builder: (context, snapshot) {
-
-        // --- HATA YAKALAYICI ---
-        if (snapshot.hasError) {
-          print("FİREBASE HATASI: ${snapshot.error}"); // Terminalde de görelim
-          return Center(child: Text("Hata: ${snapshot.error}", style: const TextStyle(color: Colors.redAccent, fontSize: 12)));
-        }
-        // ------------------------------------
-
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: Color(0xFFF4D06F)));
-        }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text("Yakında istasyon bulunamadı.", style: TextStyle(color: Colors.white)));
-        }
-
-        var stationData = snapshot.data!.docs.first.data() as Map<String, dynamic>;
-
-        String name = stationData['name'] ?? 'Bilinmeyen İstasyon';
-        String address = stationData['address'] ?? 'Adres yok';
-        String speed = stationData['speed']?.toString() ?? '0';
-        String price = stationData['price']?.toString() ?? '0.0';
-        bool isAvailable = stationData['isAvailable'] ?? false;
-
-        return _buildNearestStationCard(context, name, address, speed, price, isAvailable);
-      },
-    );
-  }
-
-  Widget _buildNearestStationCard(BuildContext context ,String name, String address, String speed, String price, bool isAvailable) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1B1B1B),
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: Colors.white10),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.25),
-            blurRadius: 20,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(32), border: Border.all(color: Colors.white10)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildStatusBadge(isAvailable),
-              const Spacer(),
-              Text(
-                isAvailable ? 'AVAILABLE' : 'IN USE',
-                style: TextStyle(
-                  color: isAvailable ? const Color(0xFF9ED99E) : Colors.redAccent,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1,
-                ),
-              ),
+              _badge("NEAREST STATION", const Color(0xFFF4D06F).withOpacity(0.12), const Color(0xFFF4D06F)),
+              _badge(data['isAvailable'] == true ? "AVAILABLE" : "OCCUPIED", const Color(0xFF323A45), data['isAvailable'] == true ? const Color(0xFF8BA2B5) : Colors.redAccent),
             ],
           ),
-          const SizedBox(height: 14),
-          Text(
-            name,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 25,
-              fontWeight: FontWeight.w900,
-              height: 1.05,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            address,
-            style: const TextStyle(color: Colors.white, fontSize: 13),
-          ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
+          Text(data['name'] ?? 'Station', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Text(data['address'] ?? 'No address found', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white38, fontSize: 13)),
+          const SizedBox(height: 24),
           Row(
             children: [
-              Expanded(
-                child: _buildInfoBox(
-                  title: 'SPEED',
-                  value: speed,
-                  unit: 'kW',
-                  icon: Icons.bolt_rounded,
-                ),
-              ),
+              _infoBox("SPEED", "${data['speed'] ?? 0} kW"),
               const SizedBox(width: 12),
-              Expanded(
-                child: _buildInfoBox(
-                  title: 'PRICE',
-                  value: '\$$price',
-                  unit: '/kWh',
-                  icon: Icons.payments_rounded,
-                ),
-              ),
+              _infoBox("PRICE", "${data['price'] ?? 0} €/kWh"),
             ],
           ),
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 56,
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () {
-            Navigator.push(
-             context,
-          MaterialPageRoute(builder: (_) => const StationDetailScreen()),
-         ); 
-             },
-              icon: const Icon(Icons.navigation_rounded, color: Colors.black),
-              label: const Text(
-                'START NAVIGATION',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.7,
-                ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF4D06F),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-            ),
-          ),
+          const Spacer(),
+          _buildStartButton(id, data),
         ],
       ),
     );
   }
 
-  Widget _buildStatusBadge(bool isAvailable) {
+  Widget _badge(String text, Color bg, Color textCol) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF4D06F).withOpacity(0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFF4D06F).withOpacity(0.35)),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.near_me_rounded, color: Color(0xFFF4D06F), size: 15),
-          SizedBox(width: 6),
-          Text(
-            'NEAREST STATION',
-            style: TextStyle(
-              color: Color(0xFFF4D06F),
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.8,
-            ),
-          ),
-        ],
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+      child: Text(text, style: TextStyle(color: textCol, fontSize: 10, fontWeight: FontWeight.w900)),
+    );
+  }
+
+  Widget _infoBox(String label, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: const Color(0xFF2C2C2E), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white10)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text(value, style: const TextStyle(color: Color(0xFFF4D06F), fontSize: 18, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildInfoBox({
-    required String title,
-    required String value,
-    required String unit,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF242424),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: const Color(0xFFF4D06F), size: 22),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white30,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                RichText(
-                  text: TextSpan(
-                    children: [
-                      TextSpan(
-                        text: value,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      TextSpan(
-                        text: ' $unit',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+  Widget _buildStartButton(String id, Map<String, dynamic> data) {
+    return SizedBox(
+      width: double.infinity, height: 60,
+      child: ElevatedButton.icon(
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => StationDetailScreen(stationId: id, stationData: data))),
+        icon: const Icon(Icons.navigation_rounded, color: Colors.black),
+        label: const Text("START NAVIGATION", style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900)),
+        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF4D06F), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), elevation: 0),
       ),
     );
   }
 }
 
-class _FakeMapPainter extends CustomPainter {
+// --- HARİTA DOKUSU ÇİZİCİ ---
+class _MapPatternPainter extends StatelessWidget {
+  const _MapPatternPainter({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(painter: _GridPainter());
+  }
+}
+
+class _GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final roadPaint = Paint()
-      ..color = Colors.white.withOpacity(0.055)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-
-    for (double y = 30; y < size.height; y += 48) {
-      final path = Path()
-        ..moveTo(0, y)
-        ..quadraticBezierTo(size.width * 0.35, y - 25, size.width, y + 18);
-      canvas.drawPath(path, roadPaint);
+    final paint = Paint()..color = Colors.white.withOpacity(0.15)..strokeWidth = 1.0;
+    for (double i = 0; i < size.height; i += 50) {
+      canvas.drawLine(Offset(0, i), Offset(size.width, i), paint);
     }
-
-    for (double x = 20; x < size.width; x += 55) {
-      final path = Path()
-        ..moveTo(x, 0)
-        ..quadraticBezierTo(x + 35, size.height * 0.45, x - 10, size.height);
-      canvas.drawPath(path, roadPaint);
+    for (double i = 0; i < size.width; i += 50) {
+      canvas.drawLine(Offset(i, 0), Offset(i, size.height), paint);
     }
-
-    final dotPaint = Paint()
-      ..color = const Color(0xFFF4D06F).withOpacity(0.5)
-      ..style = PaintingStyle.fill;
-
-    final points = [
-      Offset(size.width * 0.18, size.height * 0.25),
-      Offset(size.width * 0.76, size.height * 0.30),
-      Offset(size.width * 0.30, size.height * 0.70),
-      Offset(size.width * 0.68, size.height * 0.78),
-    ];
-
-    for (final point in points) {
-      canvas.drawCircle(point, 5, dotPaint);
-    }
+    final roadPaint = Paint()..color = Colors.white.withOpacity(0.25)..strokeWidth = 2.0..style = PaintingStyle.stroke;
+    var path = Path();
+    path.moveTo(0, size.height * 0.3);
+    path.lineTo(size.width, size.height * 0.7);
+    path.moveTo(size.width * 0.7, 0);
+    path.lineTo(size.width * 0.2, size.height);
+    canvas.drawPath(path, roadPaint);
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  @override bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

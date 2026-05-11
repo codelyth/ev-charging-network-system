@@ -17,13 +17,11 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late int _selectedIndex;
 
-  // SİHİRLİ DOKUNUŞ: Buradaki 'const' kelimesi kaldırıldı!
-  // Arkadaşının ekranlarında const olmadığı için hata veriyordu.
   final List<Widget> _screens = [
     const ExploreScreen(),
-    ChargingStatusScreen(), // Artık hata vermeyecek
-    WalletScreen(),         // Artık hata vermeyecek
-    ProfileScreen(),        // Artık hata vermeyecek
+    ChargingStatusScreen(),
+    WalletScreen(),         
+    ProfileScreen(),        
   ];
 
   @override

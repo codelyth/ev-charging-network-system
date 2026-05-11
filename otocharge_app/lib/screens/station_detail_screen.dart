@@ -3,18 +3,27 @@ import 'package:flutter/material.dart';
 import 'charging_status_screen.dart';
 
 class StationDetailScreen extends StatelessWidget {
-  const StationDetailScreen({super.key});
+  // HARİTADAN GELEN VERİLERİ BURADA KARŞILIYORUZ
+  final String stationId;
+  final Map<String, dynamic> stationData;
+
+  const StationDetailScreen({
+    super.key,
+    required this.stationId,
+    required this.stationData,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Firebase'den gelen verileri modele döküyoruz
     final station = _StationDetailModel(
-      name: 'Vortex Station X-1',
-      distance: '0.8 miles away',
+      name: stationData['name'] ?? 'Unknown Station',
+      distance: '0.8 miles away', // Şimdilik statik kalabilir veya hesaplanabilir
       rating: '4.9',
       reviewCount: 124,
-      status: 'AVAILABLE',
-      power: '150 kW',
-      price: '\$0.42 / kWh',
+      status: (stationData['isAvailable'] ?? true) ? 'AVAILABLE' : 'BUSY',
+      power: '${stationData['power_kW'] ?? 0} kW',
+      price: '\$${stationData['price_per_kWh'] ?? 0} / kWh',
       estimatedFullCharge: '\$12.50 approx.',
       address: 'Grand Central Parking, Level 2',
       accessInfo: 'Access 24/7 • Security on site',
@@ -57,6 +66,8 @@ class StationDetailScreen extends StatelessWidget {
       ),
     );
   }
+
+  // --- WIDGET METOTLARI AYNI KALIYOR (Değişiklik yok) ---
 
   Widget _buildHero(BuildContext context, _StationDetailModel station) {
     return Container(
@@ -382,10 +393,14 @@ class StationDetailScreen extends StatelessWidget {
       height: 56,
       child: ElevatedButton.icon(
         onPressed: () {
+          // Şarj ekranına istasyon verilerini gönderiyoruz
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => const ChargingStatusScreen(),
+              builder: (_) => ChargingStatusScreen(
+                stationId: stationId,
+                stationName: stationData['name'] ?? 'Station',
+              ),
             ),
           );
         },
@@ -449,6 +464,7 @@ class StationDetailScreen extends StatelessWidget {
   }
 }
 
+// --- MODEL SINIFLARI AYNI KALIYOR ---
 class _StationDetailModel {
   final String name;
   final String distance;
