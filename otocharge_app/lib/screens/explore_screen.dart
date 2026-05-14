@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'station_detail_screen.dart';
+import 'find_station_screen.dart'; // Yönlendirme için eklendi
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -16,11 +17,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Klavye açık mı kontrolü (Sarı çizgileri engellemek için)
     final bool isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom != 0;
 
     return Scaffold(
-      resizeToAvoidBottomInset: false, // Klavye açıldığında ekranın büzülmesini engeller
+      resizeToAvoidBottomInset: false, 
       backgroundColor: const Color(0xFF000000),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('Stations').snapshots(),
@@ -30,8 +30,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
           }
 
           final allDocs = snapshot.data!.docs;
-          
-          // Arama Filtresi: İsme göre filtreleme yapıyoruz
           final filteredDocs = allDocs.where((d) {
             final name = d['name']?.toString().toLowerCase() ?? "";
             return name.contains(searchQuery);
@@ -39,19 +37,25 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
           return Stack(
             children: [
-              // 1. ARKA PLAN: Sabit Izgara ve Yol Çizimi
-              const Positioned.fill(
-                child: _MapPatternPainter(key: ValueKey('static_map')),
+              // 1. ARKA PLAN: Haritaya basıldığında FindStationScreen'e gider
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const FindStationScreen()),
+                    );
+                  },
+                  child: const _MapPatternPainter(key: ValueKey('static_map')),
+                ),
               ),
 
-              // 2. DİNAMİK MARKERLAR (Harita üzerinde sabit dururlar)
+              // 2. DİNAMİK MARKERLAR
               ...filteredDocs.map((doc) {
                 final data = doc.data() as Map<String, dynamic>;
-                // Koordinatları ekrana oranlıyoruz
                 double lat = (data['latitude'] is num) ? data['latitude'].toDouble() : 0.5;
                 double lng = (data['longitude'] is num) ? data['longitude'].toDouble() : 0.5;
 
-                // Değerler 0-1 arası değilse normalize et
                 if (lat > 1) lat = (lat % 100) / 100;
                 if (lng > 1) lng = (lng % 100) / 100;
 
@@ -59,11 +63,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   key: ValueKey('marker_${doc.id}'),
                   top: MediaQuery.of(context).size.height * lat,
                   left: MediaQuery.of(context).size.width * lng,
-                  child: _buildMapMarker(),
+                  child: IgnorePointer( // Marker'a basıldığında da harita tıklamasını algılaması için
+                    child: _buildMapMarker(),
+                  ),
                 );
               }),
 
-              // 3. SABİT ÜST PANEL (Logo ve Arama)
+              // 3. SABİT ÜST PANEL
               SafeArea(
                 child: Column(
                   children: [
@@ -73,8 +79,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 ),
               ),
 
-              // 4. ALT PANEL (İstasyon Kartları)
-              // Klavye açıkken gizlenir, böylece sarı-siyah overflow hatası oluşmaz.
+              // 4. ALT PANEL
               if (!isKeyboardOpen && filteredDocs.isNotEmpty)
                 Align(
                   alignment: Alignment.bottomCenter,
@@ -99,7 +104,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
-  // --- TASARIM ELEMENTLERİ ---
+  // --- TASARIM ELEMENTLERİ (Değişmedi) ---
 
   Widget _buildMapMarker() {
     return Container(
