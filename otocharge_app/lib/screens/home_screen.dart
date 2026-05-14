@@ -72,8 +72,8 @@ class _HomeScreenState extends State<HomeScreen> {
               label: 'Explore',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.bolt_outlined),
-              activeIcon: Icon(Icons.bolt),
+              icon: Icon(Icons.local_gas_station_outlined),
+              activeIcon: Icon(Icons.local_gas_station),
               label: 'Sessions',
             ),
             BottomNavigationBarItem(
